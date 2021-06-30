@@ -285,7 +285,30 @@ func (c Client) ReplaceResource(ctx context.Context, res Resource) error {
 		return errors.New(resp.Status)
 	}
 
-	return json.Unmarshal(body, res)
+	// get the value of the generic resource
+	vRes := reflect.ValueOf(res)
+
+	// if the code below can't set the value properly, default to the original behavior
+	// I suspect this can't be true since Resource is an interface, but I don't have
+	// enough reflection experience to make that guarantee.
+	// The kind checks are to prevent vRes.Elem() from panicking.
+	if (vRes.Kind() != reflect.Ptr && vRes.Kind() != reflect.Interface) || !vRes.Elem().CanSet() {
+		return json.Unmarshal(body, res)
+	}
+
+	// create a pointer to a zero-value resource of the same Resource implementation type
+	unmarshalledRes := reflect.New(reflect.Indirect(vRes).Type())
+
+	// unmarshal the response to the zero-value resource
+	err = json.Unmarshal(body, unmarshalledRes.Interface())
+	if err != nil {
+		return err
+	}
+
+	// replace the original resource with the unmarshalled value
+	vRes.Elem().Set(reflect.Indirect(unmarshalledRes))
+
+	return nil
 }
 
 //
